@@ -9,6 +9,7 @@
 void matrixMul(int *HM1, int *HM2, int *HM3);
 void matrixZeros(int *HM);
 int matrixDiffCount(int *HM1, int *HM2);
+__global__ void cudaMatrixMulShared(int *GM1, int *GM2, int *GM3);
 void printHM(int *HM);
 //CUDA プロトタイプ
 __global__ void cudaMatrixMul(int *GM1, int *GM2, int *GM3);
@@ -108,6 +109,11 @@ __global__ void cudaMatrixMul(int *GM1, int *GM2, int *GM3){
     x += GM2[row*M_SIZE+i] * GM3[i*M_SIZE+column];
   }
   GM1[id] = x;
+}
+
+//CUDA,SharedMemory使用版行列の積
+__global__ void cudaMatrixMulShared(int *GM1, int *GM2, int *GM3){
+  
 }
 
 //CPU版行列の積
