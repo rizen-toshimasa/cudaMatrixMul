@@ -1,49 +1,49 @@
-//ÀµÊı¹ÔÎó¤ÎÀÑ¤òµá¤á.cpu¤Ègpu¤ÇÂ®ÅÙÈæ³Ó¤¹¤ë
+//æ­£æ–¹è¡Œåˆ—ã®ç©ã‚’æ±‚ã‚.cpuã¨gpuã§é€Ÿåº¦æ¯”è¼ƒã™ã‚‹
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #define M_SIZE 1024//matrix size
 
-//¥×¥í¥È¥¿¥¤¥×
+//ãƒ—ãƒ­ãƒˆã‚¿ã‚¤ãƒ—
 void matrixMul(int *HM1, int *HM2, int *HM3);
 void zerosM(int *HM);
 void printHM(int *HM);
 void fprintM(char *fileName,int *HM);
 __global__ void cudaMatrixMul(int *GM1, int *GM2, int *GM3);
 
-//¥á¥¤¥ó´Ø¿ô
+//ãƒ¡ã‚¤ãƒ³é–¢æ•°
 int main(void){
   srand(123);
-  //Host Memory ¤Ë Matrix ³ÎÊİ HM1 = HM2 * HM3
+  //Host Memory ã« Matrix ç¢ºä¿ HM1 = HM2 * HM3
   int *HM1 = (int *)malloc(sizeof(int) * M_SIZE * M_SIZE);
   int *HM2 = (int *)malloc(sizeof(int) * M_SIZE * M_SIZE);
   int *HM3 = (int *)malloc(sizeof(int) * M_SIZE * M_SIZE);
 
-  //Host Memory¤Ë¥Ç¡¼¥¿³ÊÇ¼
+  //Host Memoryã«ãƒ‡ãƒ¼ã‚¿æ ¼ç´
   zerosM(HM1);
   for(int i=0; i<M_SIZE*M_SIZE; i++){
     HM2[i] = rand()%10;
     HM3[i] = rand()%10;
   }
 
-  //Global Memory ³ÎÊİ
+  //Global Memory ç¢ºä¿
   int *GM1,*GM2,*GM3;
   cudaMalloc((void **)&GM1, sizeof(int) * M_SIZE * M_SIZE);
   cudaMalloc((void **)&GM2, sizeof(int) * M_SIZE * M_SIZE);
   cudaMalloc((void **)&GM3, sizeof(int) * M_SIZE * M_SIZE);
   
-  //GlobalMemory¤Ë¥Ç¡¼¥¿³ÊÇ¼
+  //GlobalMemoryã«ãƒ‡ãƒ¼ã‚¿æ ¼ç´
   cudaMemcpy(GM1, HM1, sizeof(int) * M_SIZE * M_SIZE, cudaMemcpyHostToDevice);
   cudaMemcpy(GM2, HM2, sizeof(int) * M_SIZE * M_SIZE, cudaMemcpyHostToDevice);
   cudaMemcpy(GM3, HM3, sizeof(int) * M_SIZE * M_SIZE, cudaMemcpyHostToDevice);
 
-  //CPU¤Ç¤Î·×»»
+  //CPUã§ã®è¨ˆç®—
   clock_t startTime,stopTime;
   startTime = clock();
   matrixMul(HM1, HM2, HM3);
   stopTime = clock();
   
-  //CUDA¤Ç¤Î·×»»
+  //CUDAã§ã®è¨ˆç®—
   cudaEvent_t cudaStartTime, cudaStopTime;
   float cudaTime;
   dim3 Dg(5, 5, 1), Db(4, 4, 2);
@@ -55,7 +55,7 @@ int main(void){
   cudaEventSynchronize(cudaStopTime);
   cudaEventElapsedTime(&cudaTime, cudaStartTime, cudaStopTime);
 
-  //É¸½à½ĞÎÏ
+  //æ¨™æº–å‡ºåŠ›
   /*
   puts("M1");
   printHM(HM1);
@@ -69,19 +69,19 @@ int main(void){
  
   fprintM("cpuMatrixMul.txt",HM1);
   
-  //Host Memory³«Êü
+  //Host Memoryé–‹æ”¾
   free(HM1);
   free(HM2);
   free(HM3);
   
-  //Global Memory³«Êü
+  //Global Memoryé–‹æ”¾
   cudaFree(GM1);
   cudaFree(GM2);
   cudaFree(GM3);
   return 0;
 }
 
-//CUDAÈÇ¹ÔÎó¤ÎÀÑ
+//CUDAç‰ˆè¡Œåˆ—ã®ç©
 __global__ void cudaMatrixMul(int *GM1, int *GM2, int *GM3){
   int id = blockDim.x * blockIdx.x + threadIdx.x;
   int row = id/M_SIZE;
@@ -93,7 +93,7 @@ __global__ void cudaMatrixMul(int *GM1, int *GM2, int *GM3){
   GM1[id] = x;
 }
 
-//CPUÈÇ¹ÔÎó¤ÎÀÑ
+//CPUç‰ˆè¡Œåˆ—ã®ç©
 void matrixMul(int *HM1, int *HM2, int *HM3){
   for(int i=0; i<M_SIZE; i++){
     for(int j=0; j<M_SIZE; j++){
