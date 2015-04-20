@@ -2,17 +2,18 @@
 #include <stdlib.h>
 #include <time.h>
 //#include <cblas.h>//cuda用線形計算ライブラリ 
-#define M_SIZE 1024//matrix size
+#define M_SIZE 1024//mat size
 #define B_SIZE 512//block size
 //CPU プロトタイプ
-void matrixMul(int *HM1, int *HM2, int *HM3);
-void matrixZeros(int *HM);
-void matrixTranspose(int *iMat, int*oMat);
-int matrixDiffCount(int *HM1, int *HM2);
+void matMul(int *HM1, int *HM2, int *HM3);
+void matZeros(int *HM);
+void matTranspose(int *iMat, int*oMat);
+int matDiffCount(int *HM1, int *HM2);
 void printHM(int *HM);
 //CUDA プロトタイプ
 __global__ void cudaMatrixMul(int *GM1, int *GM2, int *GM3);
 __global__ void cudaMatrixMulShared(int *GM1, int *GM2, int *GM3);
+__global__ void cudaMatrixMulSharedTsukuba(int *GM1, int *GM2, int *GM3);
 //メイン関数
 int main(void){
     srand((unsigned)time(NULL));
@@ -21,7 +22,7 @@ int main(void){
     int *HM2 = (int *)malloc(sizeof(int) * M_SIZE * M_SIZE);
     int *HM3 = (int *)malloc(sizeof(int) * M_SIZE * M_SIZE);
     //Host Memoryにデータ格納
-    matrixZeros(HM1);
+    matZeros(HM1);
     for(int i=0; i<M_SIZE*M_SIZE; i++){
         HM2[i] = rand()%256;
         HM3[i] = rand()%256;
@@ -41,7 +42,7 @@ int main(void){
     cudaEventCreate(&cpuStartTime);
     cudaEventCreate(&cpuStopTime);
     cudaEventRecord(cpuStartTime, 0);
-    matrixMul(HM1, HM2, HM3);
+    matMul(HM1, HM2, HM3);
     cudaEventRecord(cpuStopTime, 0);
     cudaEventSynchronize(cpuStopTime);
     cudaEventElapsedTime(&cpuTime, cpuStartTime, cpuStopTime);
@@ -52,7 +53,7 @@ int main(void){
     cudaEventCreate(&cudaStartTime);
     cudaEventCreate(&cudaStopTime);
     cudaEventRecord(cudaStartTime, 0);
-    cudaMatrixMul <<< Dg, Db>>> (GM1, GM2, GM3);
+    cudaMatrixMulSharedTsukuba <<< Dg, Db>>> (GM1, GM2, GM3);
     cudaEventRecord(cudaStopTime, 0);
     cudaEventSynchronize(cudaStopTime);
     cudaEventElapsedTime(&cudaTime, cudaStartTime, cudaStopTime);
@@ -65,7 +66,7 @@ int main(void){
     cudaMemcpy(cudaHM3, GM3, sizeof(int) * M_SIZE * M_SIZE, cudaMemcpyDeviceToHost);
     //標準出力
     printf("M_SIZE:%d\n",M_SIZE);
-    if(matrixDiffCount(HM1,cudaHM1)){
+    if(matDiffCount(HM1,cudaHM1)){
         puts("CPUとGPUの計算結果は一致しました");
     }else{
         puts("CPUとGPUの計算結果は一致しませんでした");
@@ -124,11 +125,31 @@ __global__ void cudaMatrixMulShared(int *GM1, int *GM2, int *GM3){
     }
     GM1[id] = x;
 }
+//tsukuba,Shared
+__global__ void cudaMatrixMulSharedTsukuba(int *GM1, int *GM2, int *GM3){
+    __shared__ int SM2[1024],SM3[1024];
+    unsigned int tid = threadIdx.x;
+    unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;
+    //SM1[tid]     = GM1[id];
+    //SM1[tid+512] = GM1[id+512];
+    SM2[tid]     = GM2[id];
+    SM2[tid+512] = GM2[id+512];
+    SM3[tid]     = GM3[id];
+    SM3[tid+512] = GM3[id+512];
+    __syncthreads();
+    int row = id/M_SIZE;
+    int column = id %M_SIZE;
+    int x = 0;
+    for(int i=0; i<M_SIZE; i++){
+        x += SM2[row * M_SIZE + i] * SM3[i * M_SIZE + column];
+    }
+    GM1[id] = x;
+}
 //CPU版行列の積
-void matrixMul(int *HM1, int *HM2, int *HM3){
+void matMul(int *HM1, int *HM2, int *HM3){
     int tmpHM[M_SIZE*M_SIZE];
-    matrixZeros(tmpHM);
-    matrixTranspose(HM3,tmpHM);//転置
+    matZeros(tmpHM);
+    matTranspose(HM3,tmpHM);//転置
     for(int i=0; i<M_SIZE; i++){
         for(int j=0; j<M_SIZE; j++){
             for(int k=0; k<M_SIZE; k++){
@@ -137,20 +158,20 @@ void matrixMul(int *HM1, int *HM2, int *HM3){
         }
     }
 }
-void matrixZeros(int *HM){
+void matZeros(int *HM){
     for(int i=0; i<M_SIZE*M_SIZE; i++){
         HM[i]=0;
     }
 }
 //転置行列
-void matrixTranspose(int *iMat, int *oMat){
+void matTranspose(int *iMat, int *oMat){
     for(int i=0; i<M_SIZE; i++){
         for(int j=0; j<M_SIZE; j++){
             oMat[j*M_SIZE + i] = iMat[i*M_SIZE + j];
         }
     }
 }
-int matrixDiffCount(int *HM1, int *HM2){
+int matDiffCount(int *HM1, int *HM2){
     for(int i=0; i<M_SIZE*M_SIZE; i++){
         if(HM1[i] - HM2[i]){
             return 0;
