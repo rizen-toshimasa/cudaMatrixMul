@@ -6,7 +6,7 @@
 //static const int B_SIZE = 1024;//block size
 #define M_SIZE 1024
 #define B_SIZE 1024
-#define SUB_SIZE 6
+#define SUB_SIZE 2
 //CPU プロトタイプ
 void matrixMul(int *HM1, int *HM2, int *HM3);
 void matrixZeros(int *HM);
@@ -27,8 +27,8 @@ int main(void){
     //Host Memoryにデータ格納
     matrixZeros(HM1);
     for(int i=0; i<M_SIZE*M_SIZE; i++){
-        HM2[i] = 1;//rand()%2;
-        HM3[i] = 1;//rand()%2;
+        HM2[i] = rand()%16;
+        HM3[i] = rand()%16;
     }
     //Global Memory 確保
     int *GM1,*GM2,*GM3;
@@ -115,7 +115,7 @@ __global__ void cudaMatrixMul(int *GM1, int *GM2, int *GM3){
 }
 //CUDA,SharedMemory使用版行列の積
 __global__ void cudaMatrixMulShared(int *GM1, int *GM2, int *GM3){
-    __shared__ int SM2[M_SIZE*SUB_SIZE], SM3[M_SIZE*SUB_SIZE];
+    __shared__ int SM2[M_SIZE*SUB_SIZE], SM3[M_SIZE*SUB_SIZE], tmpMat[SUB_SIZE][SUB_SIZE][M_SIZE];
     unsigned int tid = threadIdx.x;
     //ここらへんに転置する処理
     //GlobalMem -> SharedMem
@@ -136,17 +136,31 @@ __global__ void cudaMatrixMulShared(int *GM1, int *GM2, int *GM3){
     __syncthreads();
     for(int i=0; i < SUB_SIZE; i++){
         for(int j=0; j < SUB_SIZE; j++){
-            //総和をとる
-            //今はGMに直接足しこんでいるが,内部的にはレジスタに取り込んで
-            //足して戻してを繰り返していると思われ,非効率である
-            //SMにおいて総和するか,
-            //GMにおいてSMに戻して総和にするかは後で考える
-            
-            //__syncthreads();
-            GM1[M_SIZE*(blockIdx.y*SUB_SIZE + i) + blockIdx.x*SUB_SIZE + j] += SM2[i*SUB_SIZE + tid] * SM3[j*SUB_SIZE + tid];
+            //
+            __syncthreads();
+            tmpMat[i][j][tid] = SM2[i*SUB_SIZE + tid] * SM3[j*SUB_SIZE + tid];
             //__syncthreads();
         }
     }
+    __syncthreads();
+    for(int i=0; i<SUB_SIZE; i++){
+        for(int j=0; j<SUB_SIZE; j++){
+            for(unsigned int s = M_SIZE/2; s>0; s>>=1){
+                __syncthreads();
+                if(tid < s){
+                    tmpMat[i][j][tid] += tmpMat[i][j][tid + s];
+                }
+            }
+        }
+    }
+    __syncthreads();
+    for(int i=0; i<SUB_SIZE; i++){
+        for(int j=0; j<SUB_SIZE; j++){
+            __syncthreads();
+            GM1[M_SIZE*(blockIdx.y*SUB_SIZE+i)+blockIdx.x*SUB_SIZE+j] = tmpMat[i][j][0];
+        }
+    }
+
     __syncthreads();
 }
 //CPU版行列の積
