@@ -71,11 +71,9 @@ int main(void){
     cudaMemcpy(cudaHM3, GM3, sizeof(int) * M_SIZE * M_SIZE, cudaMemcpyDeviceToHost);
     //標準出力
     printf("M_SIZE:%d\n",M_SIZE);
-    if(matrixDiffCount(HM1,cudaHM1)){
-        puts("CPUとGPUの計算結果は一致しました");
-    }else{
-        puts("CPUとGPUの計算結果は一致しませんでした");
-    }
+    int diffNum = matrixDiffCount(HM1,cudaHM1);
+    printf("CPUとGPU%d\n",diffNum);
+    printf("CPU  GPU%d\n",M_SIZE*M_SIZE-diffNum);
     if(1){
         puts("M1");
         printHMNum(HM1,10);
@@ -124,14 +122,22 @@ __global__ void cudaMatrixMulShared(int *GM1, int *GM2, int *GM3){
         SM3[tid + M_SIZE * i] = GM3[tid + M_SIZE * i + blockIdx.x * M_SIZE * SUB_SIZE];
     }
     __syncthreads();
-    if(threadIdx.x <=10 && blockIdx.x == 0 && blockIdx.y == 0){
-        printf("tid=%d, GM2[0]=%d SM2[0]=%d\n",tid,GM2[0],SM2[0]);
-        printf("tid=%d, GM2[1]=%d SM2[1]=%d\n",tid,GM2[1],SM2[1]);
-        printf("tid=%d, GM2[2]=%d SM2[2]=%d\n",tid,GM2[2],SM2[2]);
-        printf("tid=%d, GM3[0]=%d SM3[0]=%d\n",tid,GM3[0],SM3[0]);
-        printf("tid=%d, GM3[1]=%d SM3[1]=%d\n",tid,GM3[1],SM3[1]);
-        printf("tid=%d, GM3[2]=%d SM3[2]=%d\n",tid,GM3[2],SM3[2]);
-       
+    if(threadIdx.x <=0 && blockIdx.x == 0 && blockIdx.y == 0){
+        /*printf("tid=%d, GM2[1020]=%d SM2[0]=%d\n",tid,GM2[1020],SM2[1020]);
+        printf("tid=%d, GM2[1021]=%d SM2[1]=%d\n",tid,GM2[1021],SM2[1021]);
+        printf("tid=%d, GM2[1022]=%d SM2[2]=%d\n",tid,GM2[1022],SM2[1022]);
+        printf("tid=%d, GM3[1020]=%d SM3[0]=%d\n",tid,GM3[1020],SM3[1020]);
+        printf("tid=%d, GM3[1021]=%d SM3[1]=%d\n",tid,GM3[1021],SM3[1021]);
+        printf("tid=%d, GM3[1022]=%d SM3[2]=%d\n",tid,GM3[1022],SM3[1022]);
+        */
+        int hogenum =0;
+        
+        for(int i = 0; i<1024*1024; i++){
+            if(GM2[i]-SM2[i]){
+                hogenum++;
+            }
+        }
+        printf("kotonatta%d",hogenum);
     }
     __syncthreads();
     for(int i=0; i < SUB_SIZE; i++){
@@ -190,12 +196,13 @@ void matrixTranspose(int *iMat, int *oMat){
     }
 }
 int matrixDiffCount(int *HM1, int *HM2){
+    int num=0;
     for(int i=0; i<M_SIZE*M_SIZE; i++){
         if(HM1[i] - HM2[i]){
-            return 0;
+            num++;
         }
     }
-    return 1;
+    return num;
 }
 void printHM(int *HM){
     for(int i=0; i<M_SIZE; i++){
