@@ -13,6 +13,7 @@ void matrixZeros(int *HM);
 void matrixTranspose(int *iMat, int*oMat);
 int matrixDiffCount(int *HM1, int *HM2);
 void printHM(int *HM);
+void printHMNum(int *HM, int num);
 //CUDA プロトタイプ
 __global__ void cudaMatrixMul(int *GM1, int *GM2, int *GM3);
 __global__ void cudaMatrixMulShared(int *GM1, int *GM2, int *GM3);
@@ -26,8 +27,8 @@ int main(void){
     //Host Memoryにデータ格納
     matrixZeros(HM1);
     for(int i=0; i<M_SIZE*M_SIZE; i++){
-        HM2[i] = rand()%256;
-        HM3[i] = rand()%256;
+        HM2[i] = 1;//rand()%2;
+        HM3[i] = 1;//rand()%2;
     }
     //Global Memory 確保
     int *GM1,*GM2,*GM3;
@@ -57,7 +58,7 @@ int main(void){
     cudaEventCreate(&cudaStartTime);
     cudaEventCreate(&cudaStopTime);
     cudaEventRecord(cudaStartTime, 0);
-    cudaMatrixMulShared <<< Dg, Db, 40000>>> (GM1, GM2, GM3);
+    cudaMatrixMulShared <<< Dg, Db>>> (GM1, GM2, GM3);
     cudaEventRecord(cudaStopTime, 0);
     cudaEventSynchronize(cudaStopTime);
     cudaEventElapsedTime(&cudaTime, cudaStartTime, cudaStopTime);
@@ -75,19 +76,19 @@ int main(void){
     }else{
         puts("CPUとGPUの計算結果は一致しませんでした");
     }
-    if(M_SIZE <= 10){
+    if(1){
         puts("M1");
-        printHM(HM1);
+        printHMNum(HM1,10);
         puts("M2");
-        printHM(HM2);
+        printHMNum(HM2,10);
         puts("M3");
-        printHM(HM3);
+        printHMNum(HM3,10);
         puts("cudaM");
-        printHM(cudaHM1);
+        printHMNum(cudaHM1, 10);
         puts("cuda2");
-        printHM(cudaHM2);
+        printHMNum(cudaHM2, 10);
         puts("cuda3");
-        printHM(cudaHM3);
+        printHMNum(cudaHM3, 10);
     }
     printf("CPU:Time = %f\n", cpuTime);
     printf("GPU:Time = %f\n", cudaTime);
@@ -118,31 +119,35 @@ __global__ void cudaMatrixMulShared(int *GM1, int *GM2, int *GM3){
     unsigned int tid = threadIdx.x;
     //ここらへんに転置する処理
     //GlobalMem -> SharedMem
-    for(int i=SUB_SIZE; i < SUB_SIZE; i++){
+    for(int i=0; i < SUB_SIZE; i++){
         SM2[tid + M_SIZE * i] = GM2[tid + M_SIZE * i + blockIdx.y * M_SIZE * SUB_SIZE];
         SM3[tid + M_SIZE * i] = GM3[tid + M_SIZE * i + blockIdx.x * M_SIZE * SUB_SIZE];
     }
     __syncthreads();
-    if(blockIdx.x == 0 && blockIdx.y == 0){
-        printf("SM2[0]=%d, ",SM2[0]);
-        printf("SM2[1]=%d, ",SM2[1]);
-        printf("SM2[2]=%d\n",SM2[2]);
-        printf("SM3[0]=%d, ",SM3[0]);
-        printf("SM3[1]=%d, ",SM3[1]);
-        printf("SM3[2]=%d\n",SM3[2]);
+    if(threadIdx.x <=10 && blockIdx.x == 0 && blockIdx.y == 0){
+        printf("tid=%d, GM2[0]=%d SM2[0]=%d\n",tid,GM2[0],SM2[0]);
+        printf("tid=%d, GM2[1]=%d SM2[1]=%d\n",tid,GM2[1],SM2[1]);
+        printf("tid=%d, GM2[2]=%d SM2[2]=%d\n",tid,GM2[2],SM2[2]);
+        printf("tid=%d, GM3[0]=%d SM3[0]=%d\n",tid,GM3[0],SM3[0]);
+        printf("tid=%d, GM3[1]=%d SM3[1]=%d\n",tid,GM3[1],SM3[1]);
+        printf("tid=%d, GM3[2]=%d SM3[2]=%d\n",tid,GM3[2],SM3[2]);
        
     }
     __syncthreads();
-    for(int i=SUB_SIZE; i < SUB_SIZE; i++){
-        for(int j=SUB_SIZE; j < SUB_SIZE; j++){
+    for(int i=0; i < SUB_SIZE; i++){
+        for(int j=0; j < SUB_SIZE; j++){
             //総和をとる
             //今はGMに直接足しこんでいるが,内部的にはレジスタに取り込んで
             //足して戻してを繰り返していると思われ,非効率である
             //SMにおいて総和するか,
             //GMにおいてSMに戻して総和にするかは後で考える
+            
+            //__syncthreads();
             GM1[M_SIZE*(blockIdx.y*SUB_SIZE + i) + blockIdx.x*SUB_SIZE + j] += SM2[i*SUB_SIZE + tid] * SM3[j*SUB_SIZE + tid];
+            //__syncthreads();
         }
     }
+    __syncthreads();
 }
 //CPU版行列の積
 void matrixMul(int *HM1, int *HM2, int *HM3){
@@ -181,6 +186,15 @@ int matrixDiffCount(int *HM1, int *HM2){
 void printHM(int *HM){
     for(int i=0; i<M_SIZE; i++){
         for(int j=0; j<M_SIZE;j++){
+            printf("%d,",HM[i*M_SIZE + j]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+void printHMNum(int *HM, int num){
+    for(int i=0; i<num; i++){
+        for(int j=0; j<num;j++){
             printf("%d,",HM[i*M_SIZE + j]);
         }
         printf("\n");
