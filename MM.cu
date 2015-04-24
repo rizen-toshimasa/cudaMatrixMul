@@ -4,8 +4,9 @@
 //#include <cblas.h>//cuda用線形計算ライブラリ 
 //static const int M_SIZE = 3;//matrix size
 //static const int B_SIZE = 1024;//block size
-#define M_SIZE 10
+#define M_SIZE 1024
 #define B_SIZE 1024
+#define SUB_SIZE 6
 //CPU プロトタイプ
 void matrixMul(int *HM1, int *HM2, int *HM3);
 void matrixZeros(int *HM);
@@ -36,7 +37,9 @@ int main(void){
     //GlobalMemoryにデータ格納
     cudaMemcpy(GM1, HM1, sizeof(int) * M_SIZE * M_SIZE, cudaMemcpyHostToDevice);
     cudaMemcpy(GM2, HM2, sizeof(int) * M_SIZE * M_SIZE, cudaMemcpyHostToDevice);
-    cudaMemcpy(GM3, HM3, sizeof(int) * M_SIZE * M_SIZE, cudaMemcpyHostToDevice);
+    int *TM = (int *)malloc(sizeof(int) * M_SIZE * M_SIZE);
+    matrixTranspose(HM3,TM);
+    cudaMemcpy(GM3, TM, sizeof(int) * M_SIZE * M_SIZE, cudaMemcpyHostToDevice);
     //CPUでの計算
     cudaEvent_t cpuStartTime,cpuStopTime;
     float cpuTime;
@@ -50,15 +53,11 @@ int main(void){
     //CUDAでの計算
     cudaEvent_t cudaStartTime, cudaStopTime;
     float cudaTime;
-    int DgSize = M_SIZE*M_SIZE/B_SIZE;
-    if(DgSize == 0){
-        DgSize = 1;
-    }
-    dim3 Dg(1, 1, 1), Db(100, 1, 1);
+    dim3 Dg(M_SIZE/SUB_SIZE, M_SIZE/SUB_SIZE, 1), Db(1024, 1, 1);
     cudaEventCreate(&cudaStartTime);
     cudaEventCreate(&cudaStopTime);
     cudaEventRecord(cudaStartTime, 0);
-    cudaMatrixMul <<< Dg, Db>>> (GM1, GM2, GM3);
+    cudaMatrixMulShared <<< Dg, Db, 40000>>> (GM1, GM2, GM3);
     cudaEventRecord(cudaStopTime, 0);
     cudaEventSynchronize(cudaStopTime);
     cudaEventElapsedTime(&cudaTime, cudaStartTime, cudaStopTime);
@@ -115,19 +114,35 @@ __global__ void cudaMatrixMul(int *GM1, int *GM2, int *GM3){
 }
 //CUDA,SharedMemory使用版行列の積
 __global__ void cudaMatrixMulShared(int *GM1, int *GM2, int *GM3){
-    __shared__ int SM2[1024], SM3[1024];
+    __shared__ int SM2[M_SIZE*SUB_SIZE], SM3[M_SIZE*SUB_SIZE];
     unsigned int tid = threadIdx.x;
-    unsigned int id = blockIdx.x*blockDim.x + threadIdx.x;
-    SM2[tid] = GM2[id];
-    SM3[tid] = GM3[id];
-    __syncthreads();
-    int row = id/M_SIZE;
-    int column = id%M_SIZE;
-    int x=0;
-    for(int i=0; i<M_SIZE; i++){
-        x += SM2[row*M_SIZE+i] * SM3[i*M_SIZE+column];
+    //ここらへんに転置する処理
+    //GlobalMem -> SharedMem
+    for(int i=SUB_SIZE; i < SUB_SIZE; i++){
+        SM2[tid + M_SIZE * i] = GM2[tid + M_SIZE * i + blockIdx.y * M_SIZE * SUB_SIZE];
+        SM3[tid + M_SIZE * i] = GM3[tid + M_SIZE * i + blockIdx.x * M_SIZE * SUB_SIZE];
     }
-    GM1[id] = x;
+    __syncthreads();
+    if(blockIdx.x == 0 && blockIdx.y == 0){
+        printf("SM2[0]=%d, ",SM2[0]);
+        printf("SM2[1]=%d, ",SM2[1]);
+        printf("SM2[2]=%d\n",SM2[2]);
+        printf("SM3[0]=%d, ",SM3[0]);
+        printf("SM3[1]=%d, ",SM3[1]);
+        printf("SM3[2]=%d\n",SM3[2]);
+       
+    }
+    __syncthreads();
+    for(int i=SUB_SIZE; i < SUB_SIZE; i++){
+        for(int j=SUB_SIZE; j < SUB_SIZE; j++){
+            //総和をとる
+            //今はGMに直接足しこんでいるが,内部的にはレジスタに取り込んで
+            //足して戻してを繰り返していると思われ,非効率である
+            //SMにおいて総和するか,
+            //GMにおいてSMに戻して総和にするかは後で考える
+            GM1[M_SIZE*(blockIdx.y*SUB_SIZE + i) + blockIdx.x*SUB_SIZE + j] += SM2[i*SUB_SIZE + tid] * SM3[j*SUB_SIZE + tid];
+        }
+    }
 }
 //CPU版行列の積
 void matrixMul(int *HM1, int *HM2, int *HM3){
